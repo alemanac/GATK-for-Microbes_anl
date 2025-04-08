@@ -40,7 +40,7 @@ workflow MicrobialGenomePipeline {
     Int? num_dangling_bases
     String? m2_extra_args
     String? m2_filter_extra_args
-    Boolean? make_bamout
+    Boolean make_bamout = true
     Boolean circular_ref = false
   
 
@@ -176,7 +176,7 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
         preemptible_tries = preemptible_tries
     }
 
-    if (defined(make_bamout) && make_bamout) {
+    if (defined(make_bamout) && select_first([make_bamout, false])) {
       call ShiftBackBam {
         input:
           bam = CallShiftedM2.output_bamout,
@@ -460,7 +460,7 @@ task M2 {
   Int disk_size = ceil(size(input_bam, "GB") + ref_size) + 20
 
   # Mem is in units of GB but our command and memory runtime values are in MB
-  Int machine_mem = if defined(mem) then mem * 1000 else 3500
+  Int machine_mem = if defined(mem) then select_first([mem, 0]) * 1000 else 3500
   Int command_mem = machine_mem - 500
 
   meta {
