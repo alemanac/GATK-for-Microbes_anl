@@ -12,6 +12,10 @@ workflow MicrobialGenomePipeline {
   }
 
   input {
+
+    File? sdk_init
+    String disk_space
+
     String sample_name
     File ref_fasta
     File ref_fasta_index
@@ -63,12 +67,14 @@ workflow MicrobialGenomePipeline {
         ref_fasta_index = ref_fasta_index,
         ref_dict = ref_dict,
         preemptible_tries = preemptible_tries,
+        disk_space = disk_space
     }
 
     call IndexReference as IndexShiftedRef {
       input:
       ref_fasta = ShiftReference.shifted_ref_fasta,
-      preemptible_tries = preemptible_tries
+      preemptible_tries = preemptible_tries,
+      disk_space = disk_space
     }
   }
 
@@ -77,7 +83,8 @@ workflow MicrobialGenomePipeline {
     call RevertSam {
       input:
         input_bam = select_first([input_bam, ""]),
-        preemptible_tries = preemptible_tries
+        preemptible_tries = preemptible_tries,
+        disk_space = disk_space
     }
 
     call SamToFastq.convertSamToFastq as SamToFastq {
@@ -85,7 +92,7 @@ workflow MicrobialGenomePipeline {
         inputBam = RevertSam.unmapped_bam,
         sampleName = sample_name,
         memoryGb = 4,
-        diskSpaceGb = 100 # TODO see if we can do computations on the input_bam size here
+        diskSpaceGb = 3 # TODO see if we can do computations on the input_bam size here
     }
   }
 
@@ -94,7 +101,7 @@ workflow MicrobialGenomePipeline {
       input:
         sample_name = sample_name,
         fastq_1 = select_first([input_fastq1, ""]),
-        fastq_2 = select_first([input_fastq1, ""]),
+        fastq_2 = select_first([input_fastq2, ""]),
         readgroup_name = select_first([readgroup_name, ""]),
         library_name = select_first([library_name, ""]),
         platform_unit = select_first([platform_unit, ""]),
@@ -105,7 +112,9 @@ workflow MicrobialGenomePipeline {
   }
 
 File fastq1 = select_first([input_fastq1, SamToFastq.fastq1])
-File fastq2 = select_first([input_fastq1, SamToFastq.fastq2])
+File fastq2 = select_first([input_fastq2, SamToFastq.fastq2])
+#File fastq1 = select_first([SamToFastq.fastq1, input_fastq1])
+#File fastq2 = select_first([SamToFastq.fastq2, input_fastq2])
 File ubam = select_first([RevertSam.unmapped_bam, FastqToUnmappedBam.output_unmapped_bam])
 Int num_dangling_bases_with_default = select_first([num_dangling_bases, 1])
 File in_bam = select_first([input_bam, AlignToRef.aligned_bam])
@@ -140,7 +149,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
       make_bamout = make_bamout,
       m2_extra_args = m2_extra_args,
       gatk_override = gatk_override,
-      preemptible_tries = preemptible_tries
+      preemptible_tries = preemptible_tries,
+      disk_space = disk_space
   }
 
 
@@ -173,7 +183,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
         make_bamout = make_bamout,
         m2_extra_args = m2_extra_args,
         gatk_override = gatk_override,
-        preemptible_tries = preemptible_tries
+        preemptible_tries = preemptible_tries,
+        disk_space = disk_space
     }
 
     if (defined(make_bamout) && select_first([make_bamout, false])) {
@@ -181,7 +192,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
         input:
           bam = CallShiftedM2.output_bamout,
           shiftback_chain = select_first([ShiftReference.shiftback_chain]),
-          preemptible_tries = preemptible_tries
+          preemptible_tries = preemptible_tries,
+          disk_space = disk_space
 
       }
     }
@@ -194,7 +206,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
         ref_fasta_index = ref_fasta_index,
         ref_dict = ref_dict,
         shiftback_chain = select_first([ShiftReference.shiftback_chain]),
-        preemptible_tries = preemptible_tries
+        preemptible_tries = preemptible_tries,
+        disk_space = disk_space
     }
 
     call MergeStats {
@@ -202,7 +215,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
         shifted_stats = CallShiftedM2.stats,
         non_shifted_stats = CallM2.stats,
         gatk_override = gatk_override,
-        preemptible_tries = preemptible_tries
+        preemptible_tries = preemptible_tries,
+        disk_space = disk_space
     }
   }
 
@@ -223,7 +237,8 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
       gatk_docker_override = gatk_docker_override,
       m2_extra_filtering_args = m2_filter_extra_args,
       # vaf_filter_threshold = 0,  # do we need this value?
-      preemptible_tries = preemptible_tries
+      preemptible_tries = preemptible_tries,
+      disk_space = disk_space
   }
 
   output {
@@ -252,6 +267,9 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
 
 task ShiftReference {
   input {
+
+    String disk_space
+
     File ref_fasta
     File ref_fasta_index
     File ref_dict
@@ -290,9 +308,8 @@ task ShiftReference {
         --shift-back-output ~{basename}.shiftback.chain
   >>>
   runtime {
-      docker: "us.gcr.io/broad-gatk/gatk:4.1.7.0"
+      container: "broadinstitute/gatk"
       memory: "2 GB"
-      disks: "local-disk " + disk_size + " HDD"
       preemptible: select_first([preemptible_tries, 5])
       cpu: 2
   }
@@ -308,6 +325,9 @@ task ShiftReference {
 
 task IndexReference {
   input {
+
+    String disk_space
+
     File ref_fasta    
     Int? preemptible_tries
   }
@@ -325,7 +345,7 @@ task IndexReference {
   runtime {
     preemptible: select_first([preemptible_tries, 5])
     memory: "2 GB"
-    disks: "local-disk " + disk_size + " HDD"
+    disks: disk_space
     docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.4.2-1552931386"
   }
 
@@ -341,6 +361,9 @@ task IndexReference {
 
 task RevertSam {
   input {
+
+    String disk_space
+
     File input_bam
     String basename = basename(input_bam, ".bam")
 
@@ -368,9 +391,9 @@ task RevertSam {
     RESTORE_ORIGINAL_QUALITIES=false
   }
   runtime {
-    disks: "local-disk " + disk_size + " HDD"
+    disks: disk_space
     memory: "2 GB"
-    docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.4.2-1552931386"
+    docker: "broadinstitute/gatk"
     preemptible: select_first([preemptible_tries, 5])
   }
   output {
@@ -380,6 +403,9 @@ task RevertSam {
 
 task LiftoverAndCombineVcfs {
   input {
+
+    String disk_space
+
     File shifted_vcf
     File vcf
     String basename = basename(shifted_vcf, ".vcf")
@@ -409,22 +435,22 @@ task LiftoverAndCombineVcfs {
   command<<<
     set -e
 
-    java -jar /usr/gitc/picard.jar LiftoverVcf \
+    gatk LiftoverVcf \
       I=~{shifted_vcf} \
       O=~{basename}.shifted_back.vcf \
       R=~{ref_fasta} \
       CHAIN=~{shiftback_chain} \
       REJECT=~{basename}.rejected.vcf
 
-    java -jar /usr/gitc/picard.jar MergeVcfs \
+    gatk MergeVcfs \
       I=~{basename}.shifted_back.vcf \
       I=~{vcf} \
       O=~{basename}.final.vcf
     >>>
     runtime {
-      disks: "local-disk " + disk_size + " HDD"
-      memory: "5 GB"
-      docker: "us.gcr.io/broad-gotc-prod/genomes-in-the-cloud:2.4.2-1552931386"
+      disks: disk_space
+      memory: "2 GB"
+      docker: "broadinstitute/gatk"
       preemptible: select_first([preemptible_tries, 5])
     }
     output{
@@ -437,6 +463,9 @@ task LiftoverAndCombineVcfs {
 
 task M2 {
   input {
+
+    String disk_space
+
     File ref_fasta
     File ref_fai
     File ref_dict
@@ -492,9 +521,9 @@ task M2 {
         --max-reads-per-alignment-start 75 
   >>>
   runtime {
-      docker: "us.gcr.io/broad-gatk/gatk:4.1.7.0"
+      docker: "broadinstitute/gatk"
       memory: machine_mem + " MB"
-      disks: "local-disk " + disk_size + " HDD"
+      disks: disk_space
       preemptible: select_first([preemptible_tries, 5])
       cpu: 2
   }
@@ -508,6 +537,9 @@ task M2 {
 
 task Filter {
   input {
+
+    String disk_space
+
     File ref_fasta
     File ref_fai
     File ref_dict
@@ -552,9 +584,9 @@ task Filter {
         --microbial-mode 
   >>>
   runtime {
-      docker: select_first([gatk_docker_override, "us.gcr.io/broad-gatk/gatk:4.1.8.0"])
+      docker: select_first([gatk_docker_override, "broadinstitute/gatk"])
       memory: "4 MB"
-      disks: "local-disk " + disk_size + " HDD"
+      disks: disk_space
       preemptible: select_first([preemptible_tries, 5])
       cpu: 2
   }
@@ -566,6 +598,9 @@ task Filter {
 
 task MergeStats {
   input {
+
+    String disk_space
+
     File shifted_stats
     File non_shifted_stats
     Int? preemptible_tries
@@ -583,15 +618,18 @@ task MergeStats {
     File stats = "raw.combined.stats"
   }
   runtime {
-      docker: "us.gcr.io/broad-gatk/gatk:4.1.7.0"
+      docker: "broadinstitute/gatk"
       memory: "3 MB"
-      disks: "local-disk 20 HDD"
+      disks: disk_space
       preemptible: select_first([preemptible_tries, 5])
   }
 }
 
 task ShiftBackBam {
   input {
+
+    String disk_space
+
     File bam
     File shiftback_chain
     Int? preemptible_tries
@@ -604,7 +642,7 @@ task ShiftBackBam {
   runtime {
     preemptible: select_first([preemptible_tries, 5])
     memory: "2 GB"
-    disks: "local-disk 30 HDD"
+    disks: disk_space
     docker: "us.gcr.io/broad-dsde-methods/gatk-for-microbes:crossmap_d4631de9db30"
   }
 

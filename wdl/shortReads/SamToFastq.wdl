@@ -56,7 +56,7 @@ task samToFastq {
 		docker: "broadinstitute/genomes-in-the-cloud:2.3.1-1500064817"
 		memory: "~{memoryGb} GB"
 		cpu: "1"
-		disks: "local-disk ~{diskSpaceGb} HDD"
+		disks: "10 GB"
 		
 	}
 }
