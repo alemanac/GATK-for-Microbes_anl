@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/broadinstitute/GATK-for-Microbes/master/wdl/shortReads/MicrobialAlignmentPipeline.wdl" as AlignAndMarkDuplicates
+import "file:///home/ac.aleman/Bacterial_GATK_SNPs_aleman/workflow/scripts/MicrobialAlignmentPipeline.wdl" as AlignAndMarkDuplicates
 # import "https://api.firecloud.org/ga4gh/v1/tools/jakec:SamToFastq/versions/8/plain-WDL/descriptor" as SamToFastq
 import "https://raw.githubusercontent.com/broadinstitute/GATK-for-Microbes/master/wdl/shortReads/SamToFastq.wdl" as SamToFastq
 import "https://raw.githubusercontent.com/gatk-workflows/seq-format-conversion/master/paired-fastq-to-unmapped-bam.wdl" as FastqToUnmappedBam
@@ -45,7 +45,7 @@ workflow MicrobialGenomePipeline {
     String? m2_extra_args
     String? m2_filter_extra_args
     Boolean make_bamout = true
-    Boolean circular_ref = false
+    Boolean? circular_ref
   
 
     #Optional runtime arguments
@@ -60,7 +60,7 @@ workflow MicrobialGenomePipeline {
     sample_name: "Name of file in final output vcf"
   }
 
-  if (circular_ref) {
+  if (select_first([circular_ref, false])) {
     call ShiftReference {
       input:
         ref_fasta = ref_fasta,
@@ -154,7 +154,7 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
   }
 
 
-  if (circular_ref) {
+  if (select_first([circular_ref, false])) {
     call AlignAndMarkDuplicates.MicrobialAlignmentPipeline as AlignToShiftedRef {
       input:
         unmapped_bam = ubam,
@@ -248,6 +248,7 @@ File in_bai = select_first([input_bam_index, AlignToRef.aligned_bai])
     File filtered_vcf = Filter.filtered_vcf
     File filtered_vcf_idx = Filter.filtered_vcf_idx
     File unmapped_bam = ubam
+    File asssembly_region_out = CallM2.assembly_region_out
     File? shifted_ref_dict = ShiftReference.shifted_ref_dict
     File? shifted_ref_fasta = ShiftReference.shifted_ref_fasta
     File? shifted_ref_fasta_index = ShiftReference.shifted_ref_fasta_index
@@ -517,8 +518,9 @@ task M2 {
         ~{true='--bam-output bamout.bam' false='' make_bamout} \
         ~{m2_extra_args} \
         --annotation StrandBiasBySample \
-        --num-matching-bases-in-dangling-end-to-recover ~{num_dangling_bases} \
-        --max-reads-per-alignment-start 75 
+        --max-reads-per-alignment-start 75 \
+        --num-matching-bases-in-dangling-end-to-recover 1 \
+        --assembly-region-out assembly_region_out
   >>>
   runtime {
       docker: "broadinstitute/gatk"
@@ -532,6 +534,7 @@ task M2 {
       File raw_vcf_idx = "~{output_vcf_index}"
       File stats = "~{output_vcf}.stats"
       File output_bamout = "bamout.bam"
+      File assembly_region_out = "assembly_region_out"
   }
 }
 

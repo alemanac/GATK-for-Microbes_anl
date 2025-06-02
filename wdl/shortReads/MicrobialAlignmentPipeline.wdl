@@ -131,10 +131,6 @@ task AlignAndMarkDuplicates {
       ADD_MATE_CIGAR=true \
       MAX_INSERTIONS_OR_DELETIONS=-1 \
       PRIMARY_ALIGNMENT_STRATEGY=MostDistant \
-      PROGRAM_RECORD_ID="bwamem" \
-      PROGRAM_GROUP_VERSION="~{bwa_version}" \
-      PROGRAM_GROUP_COMMAND_LINE="~{bwa_commandline}" \
-      PROGRAM_GROUP_NAME="bwamem" \
       UNMAPPED_READ_STRATEGY=COPY_TO_TAG \
       ALIGNER_PROPER_PAIR_FLAGS=true \
       UNMAP_CONTAMINANT_READS=true \
